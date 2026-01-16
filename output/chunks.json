@@ -1,0 +1,68 @@
+[
+  {
+    "chunk_id": "351267a4b529489a0673d4de72067a5c807159ff",
+    "file_path": "D:\\youtube-datalake\\dags\\youtube_monthly_etl.py",
+    "symbol_type": "function",
+    "symbol_name": "check_file_exists",
+    "start_line": 25,
+    "end_line": 32,
+    "content": "def check_file_exists(file_path: str):\n    \"\"\"Check if the YouTube watch history file exists before transformation.\"\"\"\n    if not os.path.exists(file_path):\n        raise FileNotFoundError(\n            f\" Missing input file: {file_path}\\n\"\n            \"Please download your YouTube watch-history.json and place it in /include/\"\n        )\n    print(f\" Found file: {file_path}\")\n",
+    "calls": [],
+    "retrieval_text": "Symbol: check_file_exists\nType: function\nFile: D:\\youtube-datalake\\dags\\youtube_monthly_etl.py\n\ndef check_file_exists(file_path: str):\n    \"\"\"Check if the YouTube watch history file exists before transformation.\"\"\"\n    if not os.path.exists(file_path):\n        raise FileNotFoundError(\n            f\" Missing input file: {file_path}\\n\"\n            \"Please download your YouTube watch-history.json and place it in /include/\"\n        )\n    print(f\" Found file: {file_path}\")"
+  },
+  {
+    "chunk_id": "e9395d0c8e982d89b993a93b83d0bf3a886c5191",
+    "file_path": "D:\\youtube-datalake\\dags\\scripts\\check_file.py",
+    "symbol_type": "function",
+    "symbol_name": "check_file_exists",
+    "start_line": 4,
+    "end_line": 10,
+    "content": "def check_file_exists():\n    filepath = \"/opt/airflow/dags/scripts/include/watch-history.json\"\n    if os.path.exists(filepath):\n        print(\"File exists, proceeding with task execution\")\n    else:\n        print(\"File not found, skipping the rest of the pipeline\")\n        raise AirflowSkipException(\"watch-history.json not found. Skipping DAG run.\")\n",
+    "calls": [],
+    "retrieval_text": "Symbol: check_file_exists\nType: function\nFile: D:\\youtube-datalake\\dags\\scripts\\check_file.py\n\ndef check_file_exists():\n    filepath = \"/opt/airflow/dags/scripts/include/watch-history.json\"\n    if os.path.exists(filepath):\n        print(\"File exists, proceeding with task execution\")\n    else:\n        print(\"File not found, skipping the rest of the pipeline\")\n        raise AirflowSkipException(\"watch-history.json not found. Skipping DAG run.\")"
+  },
+  {
+    "chunk_id": "f333fdfe5f9d7285117b4964cc1d89b83a51b5ab",
+    "file_path": "D:\\youtube-datalake\\dags\\scripts\\run_athena_queries.py",
+    "symbol_type": "function",
+    "symbol_name": "run_athena_queries",
+    "start_line": 5,
+    "end_line": 48,
+    "content": "def run_athena_queries():\n    athena = boto3.client(\n        \"athena\",\n        aws_access_key_id=os.getenv(\"AWS_ACCESS_KEY_ID\"),\n        aws_secret_access_key=os.getenv(\"AWS_SECRET_ACCESS_KEY\"),\n        region_name=os.getenv(\"AWS_REGION\", \"ap-south-1\")\n    )\n\n    output_location = \"s3://nancy-youtube/athena-results/\"\n    database = \"youtube_db\"\n\n    queries = [\n        (\"Top Channels\",\n         \"SELECT channel_name, COUNT(*) AS videos_watched FROM youtube_curated \"\n         \"GROUP BY channel_name ORDER BY videos_watched DESC LIMIT 5;\"),\n\n        (\"Monthly Activity\",\n         \"SELECT year, month, COUNT(*) AS videos FROM youtube_curated \"\n         \"GROUP BY year, month ORDER BY year DESC, month DESC;\"),\n\n        (\"Most Active Days\",\n         \"SELECT day_of_week, COUNT(*) AS views FROM youtube_curated \"\n         \"GROUP BY day_of_week ORDER BY views DESC;\")\n    ]\n\n    for name, query in queries:\n        print(f\"\u25b6\ufe0f Running Athena Query: {name}\")\n        response = athena.start_query_execution(\n            QueryString=query,\n            QueryExecutionContext={\"Database\": database},\n            ResultConfiguration={\"OutputLocation\": output_location}\n        )\n\n        query_execution_id = response[\"QueryExecutionId\"]\n\n        # Wait for completion\n        while True:\n            result = athena.get_query_execution(QueryExecutionId=query_execution_id)\n            status = result[\"QueryExecution\"][\"Status\"][\"State\"]\n\n            if status in [\"SUCCEEDED\", \"FAILED\", \"CANCELLED\"]:\n                print(f\"\u2705 Query '{name}' finished with status: {status}\")\n                break\n            time.sleep(5)\n",
+    "calls": [],
+    "retrieval_text": "Symbol: run_athena_queries\nType: function\nFile: D:\\youtube-datalake\\dags\\scripts\\run_athena_queries.py\n\ndef run_athena_queries():\n    athena = boto3.client(\n        \"athena\",\n        aws_access_key_id=os.getenv(\"AWS_ACCESS_KEY_ID\"),\n        aws_secret_access_key=os.getenv(\"AWS_SECRET_ACCESS_KEY\"),\n        region_name=os.getenv(\"AWS_REGION\", \"ap-south-1\")\n    )\n\n    output_location = \"s3://nancy-youtube/athena-results/\"\n    database = \"youtube_db\"\n\n    queries = [\n        (\"Top Channels\",\n         \"SELECT channel_name, COUNT(*) AS videos_watched FROM youtube_curated \"\n         \"GROUP BY channel_name ORDER BY videos_watched DESC LIMIT 5;\"),"
+  },
+  {
+    "chunk_id": "c46ce80f8fbfe75efe00f06232d2f9a2ed2bcb9d",
+    "file_path": "D:\\youtube-datalake\\dags\\scripts\\run_glue_crawler.py",
+    "symbol_type": "function",
+    "symbol_name": "run_glue_crawler",
+    "start_line": 7,
+    "end_line": 41,
+    "content": "def run_glue_crawler(crawler_name=\"youtube_crawler\" , timeout=60):\n    glue = boto3.client(\n        \"glue\",\n        aws_access_key_id=os.getenv(\"AWS_ACCESS_KEY_ID\"),\n        aws_secret_access_key=os.getenv(\"AWS_SECRET_ACCESS_KEY\"),\n        region_name=os.getenv(\"AWS_REGION\", \"ap-south-1\")\n    )\n\n    print(f\"Starting Glue Crawler: {crawler_name}\")\n    glue.start_crawler(Name=crawler_name)\n\n    start_time = time.time()\n    while True:\n        try:\n            response = glue.get_crawler(Name=crawler_name)\n            status = response[\"Crawler\"][\"State\"]\n            print(f\"Crawler status: {status}\")\n\n            if status == \"READY\":\n                print(\"Glue Crawler completed successfully.\")\n                break\n\n            # Exit if timeout exceeded\n            if (time.time() - start_time) > timeout:\n                print(f\" Timeout: Crawler '{crawler_name}' did not complete within {timeout} seconds.\")\n                sys.exit(1)\n\n            time.sleep(10)\n\n        except glue.exceptions.EntityNotFoundException:\n            print(f\"Crawler '{crawler_name}' not found.\")\n            sys.exit(1)\n        except Exception as e:\n            print(f\"Error checking crawler status: {e}\")\n            sys.exit(1)\n",
+    "calls": [],
+    "retrieval_text": "Symbol: run_glue_crawler\nType: function\nFile: D:\\youtube-datalake\\dags\\scripts\\run_glue_crawler.py\n\ndef run_glue_crawler(crawler_name=\"youtube_crawler\" , timeout=60):\n    glue = boto3.client(\n        \"glue\",\n        aws_access_key_id=os.getenv(\"AWS_ACCESS_KEY_ID\"),\n        aws_secret_access_key=os.getenv(\"AWS_SECRET_ACCESS_KEY\"),\n        region_name=os.getenv(\"AWS_REGION\", \"ap-south-1\")\n    )\n\n    print(f\"Starting Glue Crawler: {crawler_name}\")\n    glue.start_crawler(Name=crawler_name)\n\n    start_time = time.time()\n    while True:\n        try:\n            response = glue.get_crawler(Name=crawler_name)"
+  },
+  {
+    "chunk_id": "2562d579175f9242cdc0f656de678c9cee3efb50",
+    "file_path": "D:\\youtube-datalake\\dags\\scripts\\transform_watch.py",
+    "symbol_type": "function",
+    "symbol_name": "transform_data",
+    "start_line": 5,
+    "end_line": 53,
+    "content": "def transform_data():\n    \"\"\"\n    Transforms the YouTube watch history JSON file into structured data.\n    Saves processed files locally for later upload by separate DAG tasks.\n    \"\"\"\n\n    input_path = \"/opt/airflow/dags/scripts/include/watch-history.json\"\n    staging_path = \"/opt/airflow/dags/scripts/data/processed_watch_history.csv\"\n    curated_parquet_path = \"/opt/airflow/dags/scripts/data/watch_history.parquet\"\n\n    if not os.path.exists(input_path):\n        raise FileNotFoundError(\"watch-history.json not found!\")\n\n    with open(input_path, 'r') as file:\n        data = json.load(file)\n\n    # Normalize YouTube JSON\n    records = []\n    for item in data:\n        if \"titleUrl\" in item:\n            record = {\n                \"title\": item.get(\"title\"),\n                \"titleUrl\": item.get(\"titleUrl\"),\n                \"time\": item.get(\"time\"),\n                \"channel_name\": item.get(\"subtitles\", [{}])[0].get(\"name\"),\n                \"channel_url\": item.get(\"subtitles\", [{}])[0].get(\"url\"),\n            }\n            records.append(record)\n\n    df = pd.DataFrame(records)\n\n    # Add derived columns\n    df[\"time\"] = pd.to_datetime(df[\"time\"], errors='coerce')\n    df[\"year\"] = df[\"time\"].dt.year\n    df[\"month\"] = df[\"time\"].dt.month\n    df[\"day\"] = df[\"time\"].dt.day\n    df[\"weekday\"] = df[\"time\"].dt.day_name()\n    df[\"hour\"] = df[\"time\"].dt.hour\n\n    \n    # --- Save local staging CSV ---\n    # df.to_csv(staging_path, index=False)\n    print(f\"\u2705 Staging CSV saved \u2192 {staging_path}\")\n\n    # --- Save local curated Parquet ---\n    df.to_parquet(curated_parquet_path, index=False)\n    print(f\"\u2705 Curated Parquet saved \u2192 {curated_parquet_path}\")\n\n    print(\"\ud83c\udfaf Transformation complete. Files ready for upload.\")\n",
+    "calls": [],
+    "retrieval_text": "Symbol: transform_data\nType: function\nFile: D:\\youtube-datalake\\dags\\scripts\\transform_watch.py\n\ndef transform_data():\n    \"\"\"\n    Transforms the YouTube watch history JSON file into structured data.\n    Saves processed files locally for later upload by separate DAG tasks.\n    \"\"\"\n\n    input_path = \"/opt/airflow/dags/scripts/include/watch-history.json\"\n    staging_path = \"/opt/airflow/dags/scripts/data/processed_watch_history.csv\"\n    curated_parquet_path = \"/opt/airflow/dags/scripts/data/watch_history.parquet\"\n\n    if not os.path.exists(input_path):\n        raise FileNotFoundError(\"watch-history.json not found!\")\n\n    with open(input_path, 'r') as file:\n        data = json.load(file)"
+  },
+  {
+    "chunk_id": "9ea4e0387b8301266b7307587f0fb5b5cdceadb8",
+    "file_path": "D:\\youtube-datalake\\dags\\scripts\\upload_to_s3.py",
+    "symbol_type": "function",
+    "symbol_name": "upload_file_to_s3",
+    "start_line": 4,
+    "end_line": 42,
+    "content": "def upload_file_to_s3(local_file: str, s3_key: str, bucket: str = None):\n    \"\"\"\n    Upload a file to S3.\n\n    Args:\n        local_file (str): Local path of the file to upload.\n        s3_key (str): Key (path) to save in S3, e.g. 'raw/file.json' or 'staging/file.csv'.\n        bucket (str, optional): Target S3 bucket name. \n                                If not provided, defaults to AWS_S3_BUCKET from env.\n    \"\"\"\n\n    # Fallback to environment variable if bucket not passed\n    if bucket is None:\n        bucket = os.getenv(\"S3_BUCKET\")\n\n    if not bucket:\n        raise ValueError(\"S3 bucket not specified and AWS_S3_BUCKET not set in environment.\")\n\n    # Load credentials from environment (Docker will inject them)\n    aws_access_key_id = os.getenv(\"AWS_ACCESS_KEY_ID\")\n    aws_secret_access_key = os.getenv(\"AWS_SECRET_ACCESS_KEY\")\n    aws_region = os.getenv(\"AWS_DEFAULT_REGION\", \"us-east-1\")\n\n    if not aws_access_key_id or not aws_secret_access_key:\n        raise ValueError(\"AWS credentials not found in environment variables\")\n\n    s3 = boto3.client(\n        \"s3\",\n        aws_access_key_id=aws_access_key_id,\n        aws_secret_access_key=aws_secret_access_key,\n        region_name=aws_region,\n    )\n\n    try:\n        s3.upload_file(local_file, bucket, s3_key)\n        print(f\" Uploaded {local_file} \u2192 s3://{bucket}/{s3_key}\")\n    except Exception as e:\n        print(f\" Error uploading {local_file} \u2192 s3://{bucket}/{s3_key}: {str(e)}\")\n        raise\n",
+    "calls": [],
+    "retrieval_text": "Symbol: upload_file_to_s3\nType: function\nFile: D:\\youtube-datalake\\dags\\scripts\\upload_to_s3.py\n\ndef upload_file_to_s3(local_file: str, s3_key: str, bucket: str = None):\n    \"\"\"\n    Upload a file to S3.\n\n    Args:\n        local_file (str): Local path of the file to upload.\n        s3_key (str): Key (path) to save in S3, e.g. 'raw/file.json' or 'staging/file.csv'.\n        bucket (str, optional): Target S3 bucket name. \n                                If not provided, defaults to AWS_S3_BUCKET from env.\n    \"\"\"\n\n    # Fallback to environment variable if bucket not passed\n    if bucket is None:\n        bucket = os.getenv(\"S3_BUCKET\")\n"
+  }
+]
