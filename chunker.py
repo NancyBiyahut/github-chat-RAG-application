@@ -1,6 +1,5 @@
 import ast
 import hashlib
-import json
 from pathlib import Path
 
 EXCLUDED_DIRS = {"__pycache__", ".git", ".venv", "venv", "node_modules"}
@@ -202,19 +201,19 @@ def build_retrieval_text(chunk):
 
 # ---------- Entry Point ----------
 
-if __name__ == "__main__":
-    repo_path = Path("D:\\youtube-datalake\\dags" ).resolve() 
+# if __name__ == "__main__":
+#     repo_path = Path("D:\\youtube-datalake\\dags" ).resolve() 
 
-    chunks = extract_chunks_from_repo(repo_path)
-    chunks = resolve_calls(chunks)
+#     chunks = extract_chunks_from_repo(repo_path)
+#     chunks = resolve_calls(chunks)
 
-    for chunk in chunks:
-        chunk["retrieval_text"] = build_retrieval_text(chunk)
+#     for chunk in chunks:
+#         chunk["retrieval_text"] = build_retrieval_text(chunk)
         
-    output_path = Path("output/chunks.json")
-    output_path.parent.mkdir(exist_ok=True)
+#     output_path = Path("output/chunks.json")
+#     output_path.parent.mkdir(exist_ok=True)
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(chunks, f, indent=2)
+#     with open(output_path, "w", encoding="utf-8") as f:
+#         json.dump(chunks, f, indent=2)
 
-    print(f"Extracted {len(chunks)} chunks")
+#     print(f"Extracted {len(chunks)} chunks")
