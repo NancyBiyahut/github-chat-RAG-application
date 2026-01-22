@@ -1,219 +1,229 @@
+
 import ast
-import hashlib
 from pathlib import Path
+from typing import List, Dict
 
-EXCLUDED_DIRS = {"__pycache__", ".git", ".venv", "venv", "node_modules"}
+from uitils.analysis import (
+    extract_docstring,
+    detect_control_flow,
+    infer_intent,
+    infer_file_role,
+)
 
-# ---------- Utilities ----------
-
-def should_skip(path: Path):
-    return any(part in EXCLUDED_DIRS for part in path.parts)
-
-def generate_chunk_id(file_path, symbol_name, start, end):
-    raw = f"{file_path}:{symbol_name}:{start}:{end}"
-    return hashlib.sha1(raw.encode()).hexdigest()
-
-
-# ---------- Call Graph Visitor ----------
-
-class CallGraphVisitor(ast.NodeVisitor):
-    def __init__(self):
-        self.calls = []
-
-    def visit_Call(self, node):
-        if isinstance(node.func, ast.Name):
-            self.calls.append({
-                "name": node.func.id,
-                "lineno": node.lineno
-            })
-
-        elif isinstance(node.func, ast.Attribute):
-            self.calls.append({
-                "name": node.func.attr,
-                "lineno": node.lineno
-            })
-
-        self.generic_visit(node)
-
-
-# ---------- Chunk Extractor ----------
 
 class PythonChunkExtractor(ast.NodeVisitor):
-    def __init__(self, file_path, source_lines):
+    def __init__(self, file_path: str, source_lines: List[str]):
         self.file_path = file_path
         self.source_lines = source_lines
+
         self.chunks = []
+
+        # Import context
+        self.imported_modules = set()
+        self.imported_symbols = {}
+
+        # Scope tracking
         self.current_class = None
+        self.current_function = None
+
+        # File-level context
+        self.file_role = infer_file_role(file_path)
+
+    # ---------------- IMPORTS ----------------
+
+    def visit_Import(self, node):
+        for alias in node.names:
+            self.imported_modules.add(alias.name)
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node):
+        if node.module:
+            for alias in node.names:
+                self.imported_symbols[alias.asname or alias.name] = node.module
+        self.generic_visit(node)
+
+    # ---------------- CLASSES ----------------
 
     def visit_ClassDef(self, node):
-        self.chunks.append(
-            self._build_chunk(
-                symbol_type="class",
-                symbol_name=node.name,
-                start=node.lineno,
-                end=node.end_lineno
-            )
+        prev_class = self.current_class
+        self.current_class = node.name
+
+        self._create_chunk(
+            node=node,
+            chunk_type="class",
+            name=node.name,
+            docstring=extract_docstring(node),
+            control_flow=detect_control_flow(node),
+            intent_tags=infer_intent(node.name, self.imported_modules),
         )
 
-        prev = self.current_class
-        self.current_class = node.name
         self.generic_visit(node)
-        self.current_class = prev
+        self.current_class = prev_class
+
+    # ---------------- FUNCTIONS ----------------
 
     def visit_FunctionDef(self, node):
-        symbol_type = "method" if self.current_class else "function"
-        symbol_name = (
-            f"{self.current_class}.{node.name}"
-            if self.current_class else node.name
-        )
+        prev_function = self.current_function
+        self.current_function = node.name
 
-        self.chunks.append(
-            self._build_chunk(
-                symbol_type=symbol_type,
-                symbol_name=symbol_name,
-                start=node.lineno,
-                end=node.end_lineno
-            )
+        self._create_chunk(
+            node=node,
+            chunk_type="method" if self.current_class else "function",
+            name=node.name,
+            calls=self._extract_calls(node),
+            docstring=extract_docstring(node),
+            control_flow=detect_control_flow(node),
+            intent_tags=infer_intent(node.name, self.imported_modules),
         )
 
         self.generic_visit(node)
+        self.current_function = prev_function
 
-    def _build_chunk(self, symbol_type, symbol_name, start, end):
-        content = "".join(self.source_lines[start - 1:end])
-        return {
-            "chunk_id": generate_chunk_id(
-                self.file_path, symbol_name, start, end
-            ),
+    # ---------------- CALL EXTRACTION ----------------
+
+    def _extract_calls(self, node):
+        calls = []
+
+        for child in ast.walk(node):
+            if isinstance(child, ast.Call):
+                if isinstance(child.func, ast.Name):
+                    name = child.func.id
+                    calls.append({
+                        "name": name,
+                        "resolved_via": "import"
+                        if name in self.imported_symbols else "local_or_unknown",
+                        "module": self.imported_symbols.get(name),
+                    })
+
+                elif isinstance(child.func, ast.Attribute):
+                    calls.append({
+                        "name": ast.unparse(child.func),
+                        "resolved_via": "attribute",
+                        "module": None,
+                    })
+
+        return calls
+
+    # ---------------- CHUNK CREATION ----------------
+
+    def _create_chunk(
+        self,
+        node,
+        chunk_type,
+        name,
+        calls=None,
+        docstring=None,
+        control_flow=None,
+        intent_tags=None,
+    ):
+        start = node.lineno - 1
+        end = node.end_lineno
+        code = "".join(self.source_lines[start:end])
+
+        retrieval_text = self._build_retrieval_text(
+            chunk_type=chunk_type,
+            name=name,
+            docstring=docstring,
+            intent_tags=intent_tags,
+            control_flow=control_flow,
+            calls=calls,
+        )
+
+        self.chunks.append({
+            "type": chunk_type,
+            "name": name,
             "file_path": self.file_path,
-            "symbol_type": symbol_type,
-            "symbol_name": symbol_name,
-            "start_line": start,
-            "end_line": end,
-            "content": content
-        }
+             "start_line": start + 1,    
+             "end_line": end,
+            "file_role": self.file_role,
+            "class": self.current_class,
+            "intent_tags": intent_tags or [],
+            "control_flow": control_flow or [],
+            "docstring": docstring,
+            "imports": {
+                "modules": list(self.imported_modules),
+                "symbols": self.imported_symbols,
+            },
+            "calls": calls or [],
+            "code": code,
+            "retrieval_text": retrieval_text,
+        })
+
+    # ---------------- RETRIEVAL TEXT (KEY PART) ----------------
+
+    def _build_retrieval_text(
+        self,
+        chunk_type,
+        name,
+        docstring,
+        intent_tags,
+        control_flow,
+        calls,
+    ):
+        """
+        This is the most important function for RAG quality.
+        It converts structured metadata into semantic language.
+        """
+
+        call_names = [c["name"] for c in calls or []]
+
+        return f"""
+{chunk_type.upper()} NAME:
+{name}
+
+FILE ROLE:
+{self.file_role}
+
+LOCATION:
+{self.file_path}
+
+CLASS CONTEXT:
+{self.current_class or "N/A"}
+
+INTENT TAGS:
+{", ".join(intent_tags or ["general_logic"])}
+
+CONTROL FLOW:
+{", ".join(control_flow or ["linear_execution"])}
+
+DOCSTRING SUMMARY:
+{docstring or "No docstring provided."}
+
+IMPORT CONTEXT:
+Modules → {", ".join(self.imported_modules)}
+Imported Symbols → {", ".join(self.imported_symbols.keys())}
+
+FUNCTION CALLS:
+{", ".join(call_names) if call_names else "No explicit function calls."}
+
+DESCRIPTION:
+This {chunk_type} implements logic related to {name} and is part of the
+{self.file_role}. It may interact with other components via imported
+modules and function calls listed above.
+""".strip()
 
 
-# ---------- Extraction Logic ----------
+# ---------------- REPO DRIVER ----------------
 
-def extract_chunks_from_file(py_file):
-    with open(py_file, "r", encoding="utf-8") as f:
-        source = f.read()
-        source_lines = source.splitlines(keepends=True)
-
-    tree = ast.parse(source)
-    extractor = PythonChunkExtractor(str(py_file), source_lines)
-    extractor.visit(tree)
-
-    chunks = extractor.chunks
-
-    # attach raw calls per chunk
-    for chunk in chunks:
-        call_visitor = CallGraphVisitor()
-        subtree = ast.parse(chunk["content"])
-        call_visitor.visit(subtree)
-        chunk["raw_calls"] = call_visitor.calls
-
-    return chunks
-
-
-# def extract_chunks_from_repo(repo_path):
-#     all_chunks = []
-
-#     for py_file in repo_path.rglob("*.py"):
-#         if should_skip(py_file):
-#             continue
-#         try:
-#             all_chunks.extend(extract_chunks_from_file(py_file))
-#         except SyntaxError as e:
-#             print(f"[SKIPPED - SyntaxError] {py_file}: {e}")
-
-
-#     return all_chunks
-
-def extract_chunks_from_repo(repo_path: Path):
+def extract_chunks_from_repo(repo_path: str) -> List[Dict]:
+    repo_path = Path(repo_path)
     all_chunks = []
-    found_files = []
 
-    print(f"\n[INFO] Scanning: {repo_path}\n")
+    for py_file in repo_path.rglob("*.py"):
+        if "venv" in py_file.parts or "__pycache__" in py_file.parts:
+            continue
 
-    for path in repo_path.rglob("*"):
-        if path.is_file() and path.suffix == ".py":
-            found_files.append(path)
-            print(f"[FOUND] {path}")
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except Exception:
+            continue
 
-            try:
-                all_chunks.extend(extract_chunks_from_file(path))
-            except SyntaxError as e:
-                print(f"[SKIPPED - SyntaxError] {path}: {e}")
-
-    print(f"\n[SUMMARY]")
-    print(f"Python files found: {len(found_files)}")
-    print(f"Chunks extracted: {len(all_chunks)}")
+        extractor = PythonChunkExtractor(
+            file_path=str(py_file),
+            source_lines=source.splitlines(keepends=True),
+        )
+        extractor.visit(tree)
+        all_chunks.extend(extractor.chunks)
 
     return all_chunks
-
-
-
-# ---------- Call Resolution (Same File) ----------
-
-def resolve_calls(chunks):
-    symbol_index = {}
-
-    for chunk in chunks:
-        key = chunk["symbol_name"].split(".")[-1]
-        symbol_index[key] = chunk["chunk_id"]
-
-    for chunk in chunks:
-        resolved = []
-        for call in chunk.get("raw_calls", []):
-            target_id = symbol_index.get(call["name"])
-            if target_id:
-                resolved.append({
-                    "called_symbol": call["name"],
-                    "called_chunk_id": target_id,
-                    "line_number": call["lineno"]
-                })
-
-        chunk["calls"] = resolved
-        chunk.pop("raw_calls", None)
-
-    return chunks
-
-def build_retrieval_text(chunk):
-    lines = chunk["content"].splitlines()
-
-    header = [
-        f"Symbol: {chunk['symbol_name']}",
-        f"Type: {chunk['symbol_type']}",
-        f"File: {chunk['file_path']}"
-    ]
-
-    if chunk.get("calls"):
-        called = ", ".join(
-            c["called_symbol"] for c in chunk["calls"]
-        )
-        header.append(f"Calls: {called}")
-
-    # keep only first N meaningful lines
-    body = "\n".join(lines[:15])
-
-    return "\n".join(header) + "\n\n" + body
-
-# ---------- Entry Point ----------
-
-# if __name__ == "__main__":
-#     repo_path = Path("D:\\youtube-datalake\\dags" ).resolve() 
-
-#     chunks = extract_chunks_from_repo(repo_path)
-#     chunks = resolve_calls(chunks)
-
-#     for chunk in chunks:
-#         chunk["retrieval_text"] = build_retrieval_text(chunk)
-        
-#     output_path = Path("output/chunks.json")
-#     output_path.parent.mkdir(exist_ok=True)
-
-#     with open(output_path, "w", encoding="utf-8") as f:
-#         json.dump(chunks, f, indent=2)
-
-#     print(f"Extracted {len(chunks)} chunks")
