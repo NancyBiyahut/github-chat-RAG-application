@@ -51,7 +51,7 @@ import json
 
 from chunker import extract_chunks_from_repo
 from embedder import CodeEmbedder
-
+from llm import generate_answer
 
 # ---------------- CONFIG ----------------
 
@@ -87,12 +87,10 @@ query = "Where are files uploaded to an S3 bucket?"
 
 results = embedder.search(query, k=3)
 
-print("\nTop results:\n")
+answer = generate_answer(
+    question=query,
+    retrieved_chunks=results
+)
 
-for r in results:
-    print("File      :", r["file_path"])
-    print("Chunk     :", r.get("name"))
-    print("Lines     :", f'{r.get("start_line")} - {r.get("end_line")}')
-    print("Intent    :", r.get("intent_tags"))
-    print("Score     :", round(r["score"], 4))
-    print("-" * 60)
+print("\nANSWER:\n")
+print(answer)
